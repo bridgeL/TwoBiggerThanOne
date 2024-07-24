@@ -1,6 +1,6 @@
 # Two bigger than one
 
-Rules:
+## Rules
 
 - board size is 5x5, and when you place the tank, you must set a direction among 8, and it is unchangeable
 - when two tanks (in same group) pointing towards the same enemy without any obstacle, this enemy will be removed from the board
@@ -11,3 +11,8 @@ Rules:
   - yours tanks remaining on the board
   - the blocks that you controlled
 - controlled block means that at least two tanks are pointing towards it without any obstacle
+
+## Online server deploy
+
+`npm run start`
+

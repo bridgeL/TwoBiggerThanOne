@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Two Bigger Than One</title>
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+      }
+      #controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      #score-board {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        gap: 10px;
+        flex-direction: column;
+        align-items: center;
+      }
+      .score {
+        border: 1px solid black;
+        padding: 5px;
+        font-size: 14px;
+        width: 45%;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+      }
+      table {
+        border-collapse: collapse;
+        margin-top: 10px;
+        user-select: none;
+      }
+      td {
+        width: 50px;
+        height: 50px;
+        text-align: center;
+        vertical-align: middle;
+        border: 1px solid black;
+        font-size: 24px;
+      }
+      .direction-button {
+        display: inline-block;
+        width: 50px;
+        height: 50px;
+        margin: 10px;
+        text-align: center;
+        line-height: 50px;
+        border: 1px solid black;
+        cursor: pointer;
+        font-size: 24px;
+      }
+      .playerA {
+        color: red;
+      }
+      .playerB {
+        color: blue;
+      }
+      .highlight {
+        background-color: yellow;
+      }
+      .unsafe {
+        background-color: #fdd !important;
+      }
+      .swal2-popup .direction-container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+      }
+      .swal2-popup .direction-row {
+        display: flex;
+        justify-content: center;
+        width: 100%;
+      }
+      #game-log {
+        width: 250px;
+        height: 280px;
+        border: 1px solid black;
+        overflow-y: auto;
+        padding: 10px;
+        box-sizing: border-box;
+      }
+      #game-log div {
+        margin-bottom: 5px;
+      }
+      .log-entry:hover {
+        cursor: pointer;
+      }
+      #current-turn {
+        font-size: 24px;
+        margin-bottom: 10px;
+      }
+    </style>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.1/dist/sweetalert2.min.css"
+    />
+  </head>
+  <body>
+    <h1>Two Bigger Than One</h1>
+    <div id="controls">
+      <button onclick="restartGame()">重开</button>
+      <button onclick="showRules()">查看规则</button>
+    </div>
+    <div id="current-turn">Red's Turn</div>
+    <div style="display: flex; gap: 20px">
+      <table id="board">
+        <tbody></tbody>
+      </table>
+      <div id="game-log">
+        <h2>Game Log</h2>
+      </div>
+    </div>
+    <div id="score-board">
+      <div id="red-score" class="score">
+        <div>Score A</div>
+        <div>kill: <span id="red-killed">0</span></div>
+        <div>remaining: <span id="red-remaining">0</span></div>
+        <div>controlled: <span id="red-controlled">0</span></div>
+        <div>total: <span id="red-total">0</span></div>
+      </div>
+      <div id="blue-score" class="score">
+        <div>Score B</div>
+        <div>kill: <span id="blue-killed">0</span></div>
+        <div>remaining: <span id="blue-remaining">0</span></div>
+        <div>controlled: <span id="blue-controlled">0</span></div>
+        <div>total: <span id="blue-total">0</span></div>
+      </div>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.1/dist/sweetalert2.all.min.js"></script>
+    <script>
+      const socket = io();
+
+      const boardSize = 5;
+      const directions = [
+        { dir: "N", arrow: "↑" },
+        { dir: "NE", arrow: "↗" },
+        { dir: "E", arrow: "→" },
+        { dir: "SE", arrow: "↘" },
+        { dir: "S", arrow: "↓" },
+        { dir: "SW", arrow: "↙" },
+        { dir: "W", arrow: "←" },
+        { dir: "NW", arrow: "↖" },
+      ];
+      let board = [];
+      let currentPlayer = "A";
+      let gameOver = false;
+      let kills = { A: 0, B: 0 }; // 保存双方的击杀信息
+
+      socket.on("gameState", (gameState) => {
+        board = gameState.board;
+        currentPlayer = gameState.currentPlayer;
+        gameOver = gameState.gameOver;
+        kills = gameState.kills;
+        updateBoard();
+        updateCurrentTurn();
+      });
+
+      socket.on("scores", (scores) => {
+        updateScores(scores);
+      });
+
+      function initializeBoard() {
+        const tbody = document.querySelector("#board tbody");
+        tbody.innerHTML = "";
+        for (let i = 0; i < boardSize; i++) {
+          let row = [];
+          let tr = document.createElement("tr");
+          for (let j = 0; j < boardSize; j++) {
+            let td = document.createElement("td");
+            td.dataset.row = i;
+            td.dataset.col = j;
+            td.addEventListener("click", () => placeTank(td));
+            td.addEventListener("mouseover", () => checkHover(td));
+            td.addEventListener("mouseout", () => clearHover(td));
+            tr.appendChild(td);
+            row.push(null);
+          }
+          tbody.appendChild(tr);
+        }
+      }
+
+      function checkHover(cell) {
+        const row = parseInt(cell.dataset.row);
+        const col = parseInt(cell.dataset.col);
+        socket.emit(
+          "isSafePlace",
+          { row, col, player: currentPlayer },
+          (safe) => {
+            if (!safe) {
+              cell.classList.add("unsafe");
+            }
+          }
+        );
+      }
+
+      function clearHover(cell) {
+        cell.classList.remove("unsafe");
+      }
+
+      function placeTank(cell) {
+        if (gameOver) return;
+        const row = parseInt(cell.dataset.row);
+        const col = parseInt(cell.dataset.col);
+        if (board[row][col]) {
+          Swal.fire("此处已有tank");
+          return;
+        }
+
+        socket.emit(
+          "isSafePlace",
+          { row, col, player: currentPlayer },
+          (safe) => {
+            if (!safe) {
+              Swal.fire("此处不安全");
+              return;
+            }
+
+            Swal.fire({
+              title: `<span style="color: ${
+                currentPlayer === "A" ? "red" : "blue"
+              };">${currentPlayer === "A" ? "Red" : "Blue"}'s Turn</span>`,
+              html: `
+                      <div class="direction-container">
+                          <div class="direction-row">
+                              <div class="direction-button" data-direction="NW">↖</div>
+                              <div class="direction-button" data-direction="N">↑</div>
+                              <div class="direction-button" data-direction="NE">↗</div>
+                          </div>
+                          <div class="direction-row">
+                              <div class="direction-button" data-direction="W">←</div>
+                              <div class="direction-button" style="opacity: 0">·</div>
+                              <div class="direction-button" data-direction="E">→</div>
+                          </div>
+                          <div class="direction-row">
+                              <div class="direction-button" data-direction="SW">↙</div>
+                              <div class="direction-button" data-direction="S">↓</div>
+                              <div class="direction-button" data-direction="SE">↘</div>
+                          </div>
+                      </div>
+                  `,
+              showConfirmButton: false,
+              didOpen: () => {
+                document
+                  .querySelectorAll(".direction-button")
+                  .forEach((button) => {
+                    button.addEventListener("click", () => {
+                      Swal.close();
+                      const direction = button.dataset.direction;
+                      socket.emit("placeTank", { row, col, direction });
+                    });
+                  });
+              },
+            });
+          }
+        );
+      }
+
+      function updateBoard() {
+        const tbody = document.querySelector("#board tbody");
+        for (let i = 0; i < boardSize; i++) {
+          for (let j = 0; j < boardSize; j++) {
+            const cell = tbody.querySelector(
+              `td[data-row="${i}"][data-col="${j}"]`
+            );
+            if (board[i][j]) {
+              const { player, direction } = board[i][j];
+              const directionObj = directions.find(
+                (dir) => dir.dir === direction
+              );
+              cell.innerText = directionObj.arrow;
+              cell.className = player === "A" ? "playerA" : "playerB";
+            } else {
+              cell.innerText = "";
+              cell.className = "";
+            }
+          }
+        }
+      }
+
+      function updateCurrentTurn() {
+        const currentTurnDiv = document.getElementById("current-turn");
+        currentTurnDiv.textContent = `${
+          currentPlayer === "A" ? "Red" : "Blue"
+        }'s Turn`;
+        currentTurnDiv.style.color = currentPlayer === "A" ? "red" : "blue";
+      }
+
+      function updateScores(scores) {
+        document.getElementById("red-killed").textContent = scores.A.killed;
+        document.getElementById("red-remaining").textContent =
+          scores.A.remaining;
+        document.getElementById("red-controlled").textContent =
+          scores.A.controlled;
+        document.getElementById("red-total").textContent = scores.A.total;
+
+        document.getElementById("blue-killed").textContent = scores.B.killed;
+        document.getElementById("blue-remaining").textContent =
+          scores.B.remaining;
+        document.getElementById("blue-controlled").textContent =
+          scores.B.controlled;
+        document.getElementById("blue-total").textContent = scores.B.total;
+      }
+
+      function restartGame() {
+        socket.emit("restartGame");
+      }
+
+      function showRules() {
+        Swal.fire({
+          title: "游戏规则",
+          html: `
+            <div>
+              <p>棋盘大小为5x5，当你放置坦克时，必须设置一个8个方向中的一个方向。</p>
+              <p>当同一组的两辆坦克在没有任何障碍物的情况下同时指向同一个敌人时，该敌人会被从棋盘上移除。</p>
+              <p>每个玩家轮流进行游戏，直到其中一个玩家无法找到一个安全的位置放置新的坦克为止。</p>
+              <p>当玩家放置新的坦克时，必须确保它不会立即被消灭。例如，当两个敌人都指向这个位置时，玩家不能在这里放置坦克。</p>
+              <p>游戏结束时，我们将计算得分。得分取决于以下几个方面：</p>
+              <ul>
+                <li>你消灭的敌方坦克</li>
+                <li>留在棋盘上的你的坦克</li>
+                <li>你控制的区域</li>
+              </ul>
+              <p>控制的区域指的是至少有两辆坦克在没有任何障碍物的情况下指向该区域。</p>
+            </div>
+          `,
+          showCloseButton: true,
+          focusConfirm: false,
+        });
+      }
+
+      initializeBoard();
+      updateCurrentTurn();
+    </script>
+  </body>
+</html>
