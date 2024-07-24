@@ -14,5 +14,7 @@
 
 ## Online server deploy
 
+`npm install`
+
 `npm run start`
 

@@ -6,7 +6,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-const boardSize = 5;
+const boardSize = 4;
 let gameState = {
   board: [],
   currentPlayer: "A",
